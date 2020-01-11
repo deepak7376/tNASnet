@@ -1,61 +1,95 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
-import tensorflow as tf
-
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import numpy as np
-import os
-import pandas as pd
-
-mpl.rcParams['figure.figsize'] = (8, 6)
-mpl.rcParams['axes.grid'] = False
+import rnn_lstm
+import random as rnd
+import random as rnd
+from deap import base
+from deap import creator
+from deap import tools
 
 
-TRAIN_SPLIT = 300000
-
-tf.random.set_seed(13)
-
-csv_path = "/Users/deepak/Documents/OpenSource/tNASnet/dataset/jena_climate_2009_2016.csv.zip"
-
-df = pd.read_csv(csv_path)
-
-df.head()
-uni_data = df['T (degC)']
-uni_data.index = df['Date Time']
-uni_data.head()
-
-uni_data = uni_data.values
-
-uni_train_mean = uni_data[:TRAIN_SPLIT].mean()
-uni_train_std = uni_data[:TRAIN_SPLIT].std()
-
-uni_data = (uni_data-uni_train_mean)/uni_train_std
-
-univariate_past_history = 20
-univariate_future_target = 0
+#import preprocess
 
 
-def univariate_data(dataset, start_index, end_index, history_size, target_size):
-  data = []
-  labels = []
-
-  start_index = start_index + history_size
-  if end_index is None:
-    end_index = len(dataset) - target_size
-
-  for i in range(start_index, end_index):
-    indices = range(i-history_size, i)
-    # Reshape data from (history_size,) to (history_size, 1)
-    data.append(np.reshape(dataset[indices], (history_size, 1)))
-    labels.append(dataset[i+target_size])
-  return np.array(data), np.array(labels)
-
-x_train_uni, y_train_uni = univariate_data(uni_data, 0, TRAIN_SPLIT,
-                                           univariate_past_history,
-                                           univariate_future_target)
-x_val_uni, y_val_uni = univariate_data(uni_data, TRAIN_SPLIT, None,
-                                       univariate_past_history,
-                                       univariate_future_target)
+def main():
 
 
-#show_plot([x_train_uni[0], y_train_uni[0]], 0, 'Sample Example')
+
+  toolbox = rnn_lstm.rnn_lstm_config()
+
+
+
+  CXPB, MUTPB, NGEN, POPSIZE = 1, 0.2, 2, 4
+
+  pop = toolbox.population(n=POPSIZE)
+
+  print("\n--Initialization--")
+
+  # Evaluate the entire population
+  fitnesses = list(map(toolbox.eval_lstm, pop))
+  for ind, fit in zip(pop, fitnesses):
+      ind.fitness.values = fit
+
+  # Begin the evolution
+  for g in range(NGEN):
+      print("-- Generation:%i --" % g)
+      
+      # Select the next generation individuals
+      offspring = toolbox.select(pop, len(pop))
+
+      # Clone the selected individuals
+      offspring = list(map(toolbox.clone, offspring))
+
+      # Apply crossover and mutation on the offspring
+      for child1, child2 in zip(offspring[::2], offspring[1::2]):
+
+          # cross two individuals with probability CXPB
+          if rnd.random() < CXPB:
+              c1 = toolbox.clone(child1)
+              c2 = toolbox.clone(child2)
+              toolbox.crossover(child1, child2)
+              # fitness values of the children
+              # must be recalculated later
+              if c1!=child1: del child1.fitness.values
+              if c2!=child2: del child2.fitness.values
+
+      for mutant in offspring:
+          # mutate an individual with probability MUTPB
+          if rnd.random() < MUTPB:
+              #print("mut")
+              #print(mutant)
+              m1 = toolbox.clone(mutant)
+              toolbox.mutate(mutant)
+              if m1!=mutant: del mutant.fitness.values
+      
+      # Evaluate the individuals with an invalid fitness
+      invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+      print(invalid_ind)
+      fitnesses = map(toolbox.eval_lstm, invalid_ind)
+      for ind, fit in zip(invalid_ind, fitnesses):
+          ind.fitness.values = fit
+
+      # print("  Evaluated %i individuals" % len(invalid_ind))
+      # print(invalid_ind)
+      
+      # The population is entirely replaced by the offspring
+      pop[:] = offspring
+      
+      # Gather all the fitnesses in one list and print the stats
+      fits = [ind.fitness.values[0] for ind in pop]
+      
+      length = len(pop)
+      mean = sum(fits) / length
+      sum2 = sum(x*x for x in fits)
+      std = abs(sum2 / length - mean**2)**0.5
+      best_ind = tools.selBest(pop, POPSIZE)[0]
+
+      print("Best individual is %s, %s" % (best_ind, best_ind.fitness.values))
+      print("  Min %s" % min(fits))
+      print("  Max %s" % max(fits))
+      print("  Avg %s" % mean)
+      print("  Std %s" % std)
+      print("-- End of (successful) evolution --")
+
+
+if __name__ == '__main__':
+      
+    main()
